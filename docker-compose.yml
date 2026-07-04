@@ -1,0 +1,55 @@
+name: polyglot-cache
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-polyglot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-polyglot}
+      POSTGRES_DB: ${POSTGRES_DB:-polyglot}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-polyglot} -d ${POSTGRES_DB:-polyglot}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  sidecar:
+    build: ./sidecar
+    environment:
+      EMBED_MODEL: ${EMBED_MODEL:-BAAI/bge-m3}
+    ports:
+      - "8000:8000"
+    volumes:
+      - hfcache:/app/.hf_cache
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  proxy:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    environment:
+      PROXY_ADDR: ":8080"
+      PROVIDER_BASE_URL: ${PROVIDER_BASE_URL:-https://api.openai.com}
+      PROVIDER_API_KEY: ${PROVIDER_API_KEY:-}
+      EMBED_SIDECAR_URL: http://sidecar:8000
+      DATABASE_URL: postgres://${POSTGRES_USER:-polyglot}:${POSTGRES_PASSWORD:-polyglot}@postgres:5432/${POSTGRES_DB:-polyglot}?sslmode=disable
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      sidecar:
+        condition: service_started
+
+volumes:
+  pgdata:
+  hfcache:

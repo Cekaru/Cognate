@@ -1,0 +1,3 @@
+fastapi>=0.115,<0.116
+uvicorn[standard]>=0.30,<0.35
+FlagEmbedding>=1.2.10

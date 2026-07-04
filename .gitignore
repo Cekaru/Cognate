@@ -1,0 +1,28 @@
+# --- Secrets (never commit) ----------------------------------------------
+.env
+*.local.env
+!.env.example
+
+# --- Go -------------------------------------------------------------------
+/bin/
+*.exe
+*.test
+*.out
+vendor/
+
+# --- Python (sidecar) -----------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+sidecar/.hf_cache/
+
+# --- Editor / OS ----------------------------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# --- Local-only design notes (not published) ------------------------------
+ROADMAP.md
