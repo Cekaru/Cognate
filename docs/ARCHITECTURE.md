@@ -18,10 +18,14 @@ client / gateway ──► Polyglot Cache (Go proxy)
 **The hot path never translates the query.** Translation only touches the
 *response*, lazily, the first time an entry is served in a new language.
 
-## Current status — Phase 0
+## Current status
 
 - Go `net/http` proxy with an OpenAI-compatible `/v1/*` surface.
-- Pure passthrough to the configured upstream provider (`internal/provider`).
+- L1 exact-hash cache and L2 cross-lingual semantic cache over BGE-M3 embeddings;
+  requests that can't be cached (streaming, non-chat) pass straight through to the
+  configured upstream provider (`internal/provider`).
+- L2 is backed by pgvector when `DATABASE_URL` is set, so the cache survives a
+  restart; with no database it falls back to a process-local in-memory index.
 - `docker compose up` brings up **proxy + BGE-M3 sidecar + Postgres/pgvector**.
 - Structured JSON audit logging (`internal/telemetry`); no plaintext payloads.
 

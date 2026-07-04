@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/kaanrumin/polyglot-cache/internal/cache/engine"
+	"github.com/kaanrumin/polyglot-cache/internal/cache/semantic"
 	"github.com/kaanrumin/polyglot-cache/internal/config"
 	"github.com/kaanrumin/polyglot-cache/internal/embed"
 	"github.com/kaanrumin/polyglot-cache/internal/provider"
@@ -35,13 +36,36 @@ func main() {
 
 	// Cache tiers (Phase 1). When disabled, proxy.New falls back to a pure
 	// passthrough with a nil engine.
-	var eng *engine.Engine
+	var (
+		eng   *engine.Engine
+		pgIdx *semantic.PostgresIndex
+	)
 	if cfg.CacheEnabled {
 		embedder := embed.NewClient(cfg.EmbedSidecarURL)
+
+		// L2 backend: pgvector when a database is configured (persistent across
+		// restarts), otherwise an in-memory index (process-local). A failed
+		// pgvector init is logged and falls back to in-memory rather than
+		// refusing to start.
+		var l2 semantic.Index
+		if cfg.DatabaseURL != "" {
+			initCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			idx, err := semantic.NewPostgresIndex(initCtx, cfg.DatabaseURL, logger)
+			cancel()
+			if err != nil {
+				logger.Error("pgvector init failed; using in-memory L2 (cache will not persist)", "err", err)
+			} else {
+				l2, pgIdx = idx, idx
+			}
+		} else {
+			logger.Warn("DATABASE_URL unset; using in-memory L2 (cache will not persist)")
+		}
+
 		eng = engine.New(embedder, engine.Config{
 			L1Capacity: cfg.CacheL1Capacity,
 			Threshold:  cfg.SemanticThreshold,
 			TTL:        cfg.CacheTTL,
+			L2:         l2,
 		}, logger)
 	}
 
@@ -75,5 +99,8 @@ func main() {
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Error("graceful shutdown failed", "err", err)
+	}
+	if pgIdx != nil {
+		pgIdx.Close()
 	}
 }

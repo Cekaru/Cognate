@@ -74,7 +74,7 @@ type record struct {
 // Engine is the cache orchestrator.
 type Engine struct {
 	l1        *exact.LRU[*record]
-	l2        *semantic.MemoryIndex
+	l2        semantic.Index
 	embedder  Embedder
 	threshold float64       // global cross-lingual cutoff (Phase 1; per-pair in Phase 2)
 	ttl       time.Duration // 0 = no expiry
@@ -87,6 +87,10 @@ type Config struct {
 	L1Capacity int
 	Threshold  float64
 	TTL        time.Duration
+	// L2 is the semantic backend. When nil an in-memory index is used, so tests
+	// and single-process runs need no database; main.go supplies the pgvector
+	// backend when DATABASE_URL is set.
+	L2 semantic.Index
 }
 
 // New builds an Engine. embedder may be nil, in which case the L2 tier is
@@ -95,9 +99,13 @@ func New(embedder Embedder, cfg Config, logger *slog.Logger) *Engine {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	l2 := cfg.L2
+	if l2 == nil {
+		l2 = semantic.NewMemoryIndex()
+	}
 	return &Engine{
 		l1:        exact.New[*record](cfg.L1Capacity),
-		l2:        semantic.NewMemoryIndex(),
+		l2:        l2,
 		embedder:  embedder,
 		threshold: cfg.Threshold,
 		ttl:       cfg.TTL,
@@ -135,7 +143,13 @@ func (e *Engine) Serve(ctx context.Context, q Query, up UpstreamFunc) (*Result, 
 	// L2 — semantic. Cross-tenant sharing is intentional (ROADMAP.md §8); the
 	// shared scope is where cross-lingual hits live.
 	if vec != nil {
-		if ent, sim := e.l2.Search(vec, q.Model, q.TenantScope, cache.TenantScopeShared); ent != nil && !e.expired(ent.CreatedAt) {
+		ent, sim, err := e.l2.Search(ctx, vec, q.Model, q.TenantScope, cache.TenantScopeShared)
+		switch {
+		case err != nil:
+			// A store-level failure degrades to passthrough, like an embed error;
+			// never fail the request on a cache-path error.
+			e.logger.Warn("l2 search failed; bypassing L2", "err", err)
+		case ent != nil && !e.expired(ent.CreatedAt):
 			// Log every semantic lookup's score (ROADMAP.md §6 Phase 1).
 			hit := sim >= e.threshold
 			e.logger.Info("semantic lookup",
@@ -158,7 +172,7 @@ func (e *Engine) Serve(ctx context.Context, q Query, up UpstreamFunc) (*Result, 
 					EntryLang:  ent.Lang,
 				}, nil
 			}
-		} else {
+		default:
 			e.logger.Debug("semantic lookup: no candidate", "model", q.Model, "prompt_lang", q.Lang)
 		}
 	}
@@ -174,7 +188,7 @@ func (e *Engine) Serve(ctx context.Context, q Query, up UpstreamFunc) (*Result, 
 		now := e.now()
 		e.l1.Put(key, &record{response: resp.Body, lang: q.Lang, createdAt: now})
 		if vec != nil {
-			e.l2.Add(&semantic.Entry{
+			if err := e.l2.Add(ctx, &semantic.Entry{
 				Key:         key,
 				TenantScope: q.TenantScope,
 				Model:       q.Model,
@@ -182,7 +196,11 @@ func (e *Engine) Serve(ctx context.Context, q Query, up UpstreamFunc) (*Result, 
 				Response:    resp.Body,
 				Lang:        q.Lang,
 				CreatedAt:   now,
-			})
+			}); err != nil {
+				// The response is still returned to the client; only persistence
+				// failed. L1 already holds it for identical repeats.
+				e.logger.Warn("l2 store failed", "err", err)
+			}
 		}
 	}
 
