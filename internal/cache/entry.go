@@ -1,5 +1,5 @@
 // Package cache defines the shared cache-entry shape used by the L1 (exact)
-// and L2 (semantic) tiers. See ROADMAP.md §3.
+// and L2 (semantic) tiers.
 //
 // Core principle: the query embedding is stored in the prompt's ORIGINAL
 // language (no translate-then-embed). Responses are translated lazily, per
@@ -9,7 +9,7 @@ package cache
 import "time"
 
 // TenantScopeShared marks an entry as visible to all tenants (cross-tenant
-// sharing is where the cross-lingual hit rate lives; see ROADMAP.md §8).
+// sharing is where the cross-lingual hit rate lives).
 const TenantScopeShared = "shared"
 
 // EmbeddingDim is the BGE-M3 output dimensionality.
@@ -32,7 +32,7 @@ type CacheEntry struct {
 
 // StructuralTokens holds the locale-normalized structural elements the guard
 // compares across a cross-lingual match, to reject numeric/ID near-misses that
-// the embedding cannot separate. See ROADMAP.md §6 (Phase 2b).
+// the embedding cannot separate.
 type StructuralTokens struct {
 	Numbers    []string
 	IDs        []string

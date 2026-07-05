@@ -1,6 +1,6 @@
 // Package semantic implements the L2 cache tier: similarity search over BGE-M3
-// query embeddings, gated by a per-language-pair threshold and (in Phase 2) the
-// structural token guard. Implemented in Phases 1–2 (ROADMAP.md §6, §9).
+// query embeddings, gated by a per-language-pair threshold and the structural
+// token guard.
 //
 // This file is the in-memory index: an exhaustive cosine scan, dependency-free
 // for tests and single-process runs. The pgvector-backed index (persistent,
@@ -16,7 +16,7 @@ import (
 )
 
 // Entry is one stored prompt/response record in the L2 index. The embedding is
-// the query vector in the prompt's ORIGINAL language (ROADMAP.md §1).
+// the query vector in the prompt's ORIGINAL language.
 type Entry struct {
 	Key         string
 	TenantScope string    // "shared" or a tenant hash
@@ -29,7 +29,7 @@ type Entry struct {
 
 // Index is the L2 vector-store surface the engine depends on. The in-memory and
 // pgvector backends both satisfy it, so persistence is a wiring swap in main.go
-// with no engine change (ROADMAP.md §6). Both methods take a context and return
+// with no engine change. Both methods take a context and return
 // an error so the persistent backend can honor request cancellation and surface
 // store failures; the engine degrades to passthrough on either (never fails a
 // request on a cache-path error).

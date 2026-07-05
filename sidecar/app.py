@@ -5,12 +5,12 @@ Exposes a minimal HTTP API the Go proxy calls over localhost:
     GET  /health  -> readiness probe
     POST /embed   -> {"model", "dim", "embeddings": [[...1024 floats...], ...]}
 
-Core principle (ROADMAP.md §1): we do NOT translate-then-embed. Each text is
+Core principle: we do NOT translate-then-embed. Each text is
 embedded in its ORIGINAL language; BGE-M3 places cross-lingual equivalents near
 each other in the same vector space.
 
 The model is loaded lazily on the first /embed call so the container becomes
-healthy immediately during `docker compose up` (Phase 0) without waiting on a
+healthy immediately during `docker compose up` without waiting on a
 multi-gigabyte model download.
 """
 from __future__ import annotations

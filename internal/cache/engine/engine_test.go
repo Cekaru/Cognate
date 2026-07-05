@@ -66,7 +66,7 @@ func query(text, lang string) Query {
 	}
 }
 
-// TestCrossLingualHit is the Phase-1 thesis in a unit test: a Spanish prompt
+// TestCrossLingualHit is the thesis in a unit test: a Spanish prompt
 // seeds the cache; an equivalent Turkish prompt is served from that entry.
 func TestCrossLingualHit(t *testing.T) {
 	emb := &fakeEmbedder{vecs: map[string][]float32{

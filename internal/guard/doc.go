@@ -4,5 +4,5 @@
 // (1.000,50 vs 1,000.50; Eastern vs Western Arabic numerals; DD/MM vs MM/DD)
 // — and rejects the match on mismatch. This is the security core; a guard
 // written naively for English silently fails on exactly the non-English
-// inputs the project exists to serve. See ROADMAP.md §6 (Phase 2b), §10.1.
+// inputs the project exists to serve.
 package guard

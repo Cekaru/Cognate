@@ -1,7 +1,7 @@
 // Package engine wires the L1 (exact) and L2 (semantic) tiers into a single
 // cache lookup path and owns the store-on-miss logic. It is the piece the proxy
 // calls; keeping it HTTP-free makes the whole cross-lingual pipeline testable
-// with a fake embedder and a fake upstream (ROADMAP.md §3, §6).
+// with a fake embedder and a fake upstream.
 package engine
 
 import (
@@ -25,7 +25,7 @@ type Embedder interface {
 
 // Query is a normalized cache lookup request built from an OpenAI chat request.
 type Query struct {
-	TenantScope string // "shared" in Phase 1; per-tenant hash in Phase 2
+	TenantScope string // "shared" for now; per-tenant hash later
 	Model       string
 	ExactText   string // canonical string hashed for the L1 key (roles + content)
 	EmbedText   string // semantic content embedded for the L2 lookup
@@ -76,7 +76,7 @@ type Engine struct {
 	l1        *exact.LRU[*record]
 	l2        semantic.Index
 	embedder  Embedder
-	threshold float64       // global cross-lingual cutoff (Phase 1; per-pair in Phase 2)
+	threshold float64       // global cross-lingual cutoff (per-language-pair later)
 	ttl       time.Duration // 0 = no expiry
 	logger    *slog.Logger
 	now       func() time.Time
@@ -140,7 +140,7 @@ func (e *Engine) Serve(ctx context.Context, q Query, up UpstreamFunc) (*Result, 
 		}
 	}
 
-	// L2 — semantic. Cross-tenant sharing is intentional (ROADMAP.md §8); the
+	// L2 — semantic. Cross-tenant sharing is intentional; the
 	// shared scope is where cross-lingual hits live.
 	if vec != nil {
 		ent, sim, err := e.l2.Search(ctx, vec, q.Model, q.TenantScope, cache.TenantScopeShared)
@@ -150,7 +150,7 @@ func (e *Engine) Serve(ctx context.Context, q Query, up UpstreamFunc) (*Result, 
 			// never fail the request on a cache-path error.
 			e.logger.Warn("l2 search failed; bypassing L2", "err", err)
 		case ent != nil && !e.expired(ent.CreatedAt):
-			// Log every semantic lookup's score (ROADMAP.md §6 Phase 1).
+			// Log every semantic lookup's score.
 			hit := sim >= e.threshold
 			e.logger.Info("semantic lookup",
 				"similarity", sim,

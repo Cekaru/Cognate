@@ -1,11 +1,11 @@
 // Package lang provides a lightweight, script-based language guess for the
-// four target languages (TR/ES/EN/ZH; see ROADMAP.md §4).
+// four target languages (TR/ES/EN/ZH).
 //
-// This is a Phase-1 placeholder used only to label log lines and cache entries
-// so the cross-lingual hit is legible (e.g. "tr prompt served es-cached
-// answer"). It is deliberately cheap and heuristic; the real locale-aware
-// handling — including the structural-token guard and per-pair thresholds —
-// lands in Phase 2. Do not use this for a security decision.
+// This is a placeholder used only to label log lines and cache entries so the
+// cross-lingual hit is legible (e.g. "tr prompt served es-cached answer"). It
+// is deliberately cheap and heuristic; the real locale-aware handling —
+// including the structural-token guard and per-pair thresholds — comes later.
+// Do not use this for a security decision.
 package lang
 
 import "unicode"

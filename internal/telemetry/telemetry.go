@@ -1,6 +1,6 @@
 // Package telemetry configures structured JSON logging. Per the threat model
-// (ROADMAP.md §10.7) the audit log MUST NOT contain plaintext prompts or
-// responses — only hashed identifiers, counters, and timings.
+// the audit log MUST NOT contain plaintext prompts or responses — only hashed
+// identifiers, counters, and timings.
 package telemetry
 
 import (

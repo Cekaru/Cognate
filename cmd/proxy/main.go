@@ -1,9 +1,7 @@
-// Command proxy is the Polyglot Cache sidecar entrypoint.
-//
-// Phase 0: it stands up an OpenAI-compatible HTTP surface that passes
-// requests straight through to the configured upstream provider. Later
-// phases insert the L1 (exact) and L2 (semantic) cache tiers ahead of the
-// upstream call. See ROADMAP.md §6.
+// Command proxy is the Polyglot Cache sidecar entrypoint. It stands up an
+// OpenAI-compatible HTTP surface that serves requests from the L1 (exact) and
+// L2 (semantic) cache tiers, falling back to the configured upstream provider
+// on a miss.
 package main
 
 import (
@@ -34,7 +32,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Cache tiers (Phase 1). When disabled, proxy.New falls back to a pure
+	// Cache tiers. When disabled, proxy.New falls back to a pure
 	// passthrough with a nil engine.
 	var (
 		eng   *engine.Engine

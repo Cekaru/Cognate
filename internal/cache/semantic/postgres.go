@@ -2,9 +2,9 @@ package semantic
 
 // PostgresIndex is the persistent L2 backend: the same vector-search surface as
 // MemoryIndex, stored in Postgres with the pgvector extension so the cache
-// survives a restart (ROADMAP.md §6, the persistence step that finishes Phase
-// 1). Cross-lingual matching is unchanged — BGE-M3 query vectors are stored in
-// the prompt's original language and compared by cosine distance server-side.
+// survives a restart. Cross-lingual matching is unchanged — BGE-M3 query
+// vectors are stored in the prompt's original language and compared by cosine
+// distance server-side.
 
 import (
 	"context"

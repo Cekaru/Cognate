@@ -4,9 +4,8 @@
 FROM golang:1.23-alpine AS build
 WORKDIR /src
 
-# Phase 0 uses only the Go standard library, so go.mod alone is enough and
-# there is no go.sum yet. Copy the module graph first for layer caching.
-COPY go.mod ./
+# Copy the module graph first so dependency download caches in its own layer.
+COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .

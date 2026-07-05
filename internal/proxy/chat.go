@@ -77,7 +77,7 @@ func (h *chatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	embedText := embedText(req.Messages)
 	q := engine.Query{
-		TenantScope: cache.TenantScopeShared, // per-tenant isolation lands in Phase 2
+		TenantScope: cache.TenantScopeShared, // per-tenant isolation comes later
 		Model:       req.Model,
 		ExactText:   exactText(req.Messages),
 		EmbedText:   embedText,
@@ -106,7 +106,7 @@ func (h *chatHandler) fallback(w http.ResponseWriter, r *http.Request, body []by
 
 // callUpstream forwards the original request body to the provider and buffers
 // the full response so it can be cached. A fresh request is built so no inbound
-// client credential is ever forwarded (ROADMAP.md §8).
+// client credential is ever forwarded.
 func (h *chatHandler) callUpstream(ctx context.Context, body []byte) (*engine.UpstreamResp, error) {
 	target := h.prov.Target()
 	u := *target

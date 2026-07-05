@@ -19,10 +19,10 @@ type Config struct {
 	DatabaseURL     string     // pgvector connection string
 	LogLevel        slog.Level // structured-log verbosity
 
-	// Cache tiers (Phase 1).
+	// Cache tiers.
 	CacheEnabled      bool          // master switch; false = pure passthrough
 	CacheL1Capacity   int           // max entries in the L1 exact LRU
-	SemanticThreshold float64       // global cross-lingual cutoff (per-pair in Phase 2)
+	SemanticThreshold float64       // global cross-lingual cutoff (per-language-pair later)
 	CacheTTL          time.Duration // entry lifetime; 0 = no expiry
 }
 

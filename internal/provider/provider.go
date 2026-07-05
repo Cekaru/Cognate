@@ -1,6 +1,6 @@
-// Package provider abstracts the upstream LLM API. The interface exists from
-// day one (ROADMAP.md §4) so additional backends can be added without
-// touching the proxy; Phase 0 ships a single OpenAI-compatible implementation.
+// Package provider abstracts the upstream LLM API. The interface lets
+// additional backends be added without touching the proxy; it ships a single
+// OpenAI-compatible implementation.
 package provider
 
 import (

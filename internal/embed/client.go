@@ -1,6 +1,6 @@
 // Package embed is the Go client for the BGE-M3 Python embedding sidecar.
 // The proxy never runs the model in-process; it calls the sidecar over
-// localhost/HTTP (ROADMAP.md §4).
+// localhost/HTTP.
 package embed
 
 import (
@@ -60,7 +60,7 @@ type embedResponse struct {
 }
 
 // Embed returns BGE-M3 embeddings for the given texts, each in its original
-// language (no translate-then-embed; see ROADMAP.md §1). The returned slice is
+// language (no translate-then-embed). The returned slice is
 // index-aligned with texts and every vector has length Dim.
 func (c *Client) Embed(ctx context.Context, texts []string) ([][]float32, error) {
 	if len(texts) == 0 {

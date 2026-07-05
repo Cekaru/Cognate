@@ -1,6 +1,6 @@
-// Package proxy is the OpenAI-compatible HTTP front door. In Phase 0 it is a
-// pure passthrough reverse proxy; the L1/L2 cache lookup (ROADMAP.md §3) is
-// inserted ahead of the upstream call in later phases.
+// Package proxy is the OpenAI-compatible HTTP front door. It runs the L1/L2
+// cache lookup ahead of the upstream call, and passes through anything it
+// cannot cache (streaming, non-chat, oversized).
 package proxy
 
 import (
@@ -16,7 +16,7 @@ import (
 // New builds the proxy HTTP handler. When eng is non-nil, POST
 // /v1/chat/completions is served through the cache tiers; everything else on
 // /v1/ (and streaming or unparseable chat requests) is a passthrough reverse
-// proxy. A nil eng makes the whole surface a passthrough (ROADMAP.md §6).
+// proxy. A nil eng makes the whole surface a passthrough.
 func New(prov provider.Provider, eng *engine.Engine, logger *slog.Logger) http.Handler {
 	rp := newReverseProxy(prov, logger)
 
@@ -44,7 +44,7 @@ func newReverseProxy(prov provider.Provider, logger *slog.Logger) *httputil.Reve
 			r.URL.Host = target.Host
 			r.Host = target.Host
 			// Strip the inbound client credential and stamp the upstream one.
-			// (The client key becomes the tenant identity in Phase 2; for now
+			// (The client key becomes the tenant identity later; for now
 			// it is simply not forwarded.)
 			r.Header.Del("Authorization")
 			prov.Authorize(r)
@@ -59,7 +59,7 @@ func newReverseProxy(prov provider.Provider, logger *slog.Logger) *httputil.Reve
 }
 
 // withLogging emits one structured audit line per request. No prompt or
-// response bodies are logged (ROADMAP.md §10.7).
+// response bodies are logged.
 func withLogging(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
