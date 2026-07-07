@@ -16,6 +16,7 @@ import (
 	"github.com/kaanrumin/polyglot-cache/internal/cache/engine"
 	"github.com/kaanrumin/polyglot-cache/internal/lang"
 	"github.com/kaanrumin/polyglot-cache/internal/provider"
+	"github.com/kaanrumin/polyglot-cache/internal/tenant"
 )
 
 // maxChatBody caps the request body we buffer for cache keying. Larger requests
@@ -25,20 +26,22 @@ const maxChatBody = 4 << 20 // 4 MiB
 // chatHandler serves POST /v1/chat/completions through the cache. Streaming,
 // oversized, or unparseable requests fall back to the passthrough reverse proxy.
 type chatHandler struct {
-	prov   provider.Provider
-	eng    *engine.Engine
-	rp     *httputil.ReverseProxy
-	logger *slog.Logger
-	client *http.Client
+	prov    provider.Provider
+	eng     *engine.Engine
+	rp      *httputil.ReverseProxy
+	tenancy Tenancy
+	logger  *slog.Logger
+	client  *http.Client
 }
 
-func newChatHandler(prov provider.Provider, eng *engine.Engine, rp *httputil.ReverseProxy, logger *slog.Logger) *chatHandler {
+func newChatHandler(prov provider.Provider, eng *engine.Engine, rp *httputil.ReverseProxy, tenancy Tenancy, logger *slog.Logger) *chatHandler {
 	return &chatHandler{
-		prov:   prov,
-		eng:    eng,
-		rp:     rp,
-		logger: logger,
-		client: &http.Client{Timeout: 120 * time.Second},
+		prov:    prov,
+		eng:     eng,
+		rp:      rp,
+		tenancy: tenancy,
+		logger:  logger,
+		client:  &http.Client{Timeout: 120 * time.Second},
 	}
 }
 
@@ -68,6 +71,15 @@ func (h *chatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Tenant identity (hashed credential) gates the byte-rate limit before any
+	// cache or upstream work is spent on the request.
+	ten := tenant.FromRequest(r)
+	if !h.tenancy.Quotas.AllowRequest(ten, len(body)) {
+		h.logger.Warn("tenant rate limit exceeded", "tenant", ten, "bytes", len(body))
+		writeError(w, http.StatusTooManyRequests, "tenant rate limit exceeded", "rate_limit_exceeded")
+		return
+	}
+
 	var req chatRequest
 	if err := json.Unmarshal(body, &req); err != nil || req.Stream || len(req.Messages) == 0 {
 		// Not cacheable (streaming, malformed, or empty): pass straight through.
@@ -75,9 +87,17 @@ func (h *chatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Cross-tenant shared scope by default; the tenant's own namespace when
+	// the deployment or this request opted out of sharing.
+	scope := cache.TenantScopeShared
+	if tenant.Isolated(r, h.tenancy.IsolatedDefault) {
+		scope = ten
+	}
+
 	embedText := embedText(req.Messages)
 	q := engine.Query{
-		TenantScope: cache.TenantScopeShared, // per-tenant isolation comes later
+		TenantScope: scope,
+		Tenant:      ten,
 		Model:       req.Model,
 		ExactText:   exactText(req.Messages),
 		EmbedText:   embedText,

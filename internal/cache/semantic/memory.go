@@ -13,6 +13,8 @@ import (
 	"math"
 	"sync"
 	"time"
+
+	"github.com/kaanrumin/polyglot-cache/internal/cache"
 )
 
 // Entry is one stored prompt/response record in the L2 index. The embedding is
@@ -24,7 +26,11 @@ type Entry struct {
 	Embedding   []float32 // BGE-M3, unit-relevant; cosine handles non-unit norm
 	Response    []byte    // the cached upstream response body
 	Lang        string    // language of the seeding prompt
-	CreatedAt   time.Time
+	// Tokens are the seeding prompt's locale-normalized structural tokens; the
+	// guard compares them against the incoming prompt's on every semantic hit.
+	// Only these normalized tokens are stored — never the prompt text itself.
+	Tokens    cache.StructuralTokens
+	CreatedAt time.Time
 }
 
 // Index is the L2 vector-store surface the engine depends on. The in-memory and

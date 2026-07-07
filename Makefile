@@ -1,4 +1,4 @@
-.PHONY: build vet test run up down logs demo clean
+.PHONY: build vet test run up down logs demo calibrate clean
 
 build:
 	go build ./...
@@ -16,6 +16,11 @@ run:
 # Requires the stack to be up (make up) with a real PROVIDER_API_KEY.
 demo:
 	bash eval/demo/crosslingual_hit.sh
+
+# Per-language-pair threshold calibration against the real BGE-M3 sidecar.
+# Requires the sidecar up (docker compose up -d sidecar).
+calibrate:
+	go run ./eval/calibration
 
 up:
 	docker compose up --build

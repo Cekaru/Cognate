@@ -25,6 +25,23 @@ proxy exposes an OpenAI-compatible surface and caches semantically-equivalent
 prompts across languages; requests it can't cache (streaming, non-chat) pass
 straight through to the upstream provider.
 
+The matching layer is safety-gated (Phase 2):
+
+- **Structural token guard** — on every semantic hit, locale-normalized
+  numbers, dates, currencies, IDs, and code identifiers are compared between
+  the two prompts (`1.000,50` ≡ `1,000.50`, `一百` ≡ `100`, TR/ES day-first vs
+  EN month-first dates). A mismatch vetoes the hit: `transfer $100` never
+  serves `transfer $1000`, no matter how high the cosine score.
+- **Per-language-pair thresholds** — cross-lingual positives score lower than
+  monolingual ones, by different margins per pair, so cutoffs are calibrated
+  empirically per pair (`eval/calibration/`) and loaded via `THRESHOLDS_FILE`.
+- **Tenant isolation & quotas** — tenants are hashed API-key namespaces.
+  The cache is **cross-tenant shared by default** (that is where cross-lingual
+  hits live — a deliberate, documented trade-off); a deployment can set
+  `TENANT_ISOLATION=isolated`, or a single request can opt out with
+  `X-Polyglot-Isolation: tenant`. Per-tenant byte-rate limits and a cache-write
+  quota defend against flooding.
+
 ## Quick start
 
 ```bash

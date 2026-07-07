@@ -11,19 +11,31 @@ import (
 
 	"github.com/kaanrumin/polyglot-cache/internal/cache/engine"
 	"github.com/kaanrumin/polyglot-cache/internal/provider"
+	"github.com/kaanrumin/polyglot-cache/internal/tenant"
 )
+
+// Tenancy bundles the per-tenant policy the front door enforces. The zero
+// value means no rate limiting and the shared-cache default.
+type Tenancy struct {
+	// Quotas rate-limits inbound request bytes per tenant; nil disables.
+	Quotas *tenant.Quotas
+	// IsolatedDefault serves every tenant from its own cache namespace
+	// (TENANT_ISOLATION=isolated). The default is the shared cache; a single
+	// request can still opt out via the X-Polyglot-Isolation header.
+	IsolatedDefault bool
+}
 
 // New builds the proxy HTTP handler. When eng is non-nil, POST
 // /v1/chat/completions is served through the cache tiers; everything else on
 // /v1/ (and streaming or unparseable chat requests) is a passthrough reverse
 // proxy. A nil eng makes the whole surface a passthrough.
-func New(prov provider.Provider, eng *engine.Engine, logger *slog.Logger) http.Handler {
+func New(prov provider.Provider, eng *engine.Engine, tenancy Tenancy, logger *slog.Logger) http.Handler {
 	rp := newReverseProxy(prov, logger)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", healthz)
 	if eng != nil {
-		mux.Handle("/v1/chat/completions", newChatHandler(prov, eng, rp, logger))
+		mux.Handle("/v1/chat/completions", newChatHandler(prov, eng, rp, tenancy, logger))
 	}
 	// OpenAI-compatible surface. All other paths pass straight through.
 	mux.Handle("/v1/", rp)

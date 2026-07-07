@@ -11,6 +11,7 @@ import (
 
 	"github.com/kaanrumin/polyglot-cache/internal/cache/engine"
 	"github.com/kaanrumin/polyglot-cache/internal/provider"
+	"github.com/kaanrumin/polyglot-cache/internal/tenant"
 )
 
 // fakeEmbedder maps message content to fixed vectors for the HTTP-level test.
@@ -33,6 +34,10 @@ const (
 )
 
 func newTestHandler(t *testing.T, upstream http.Handler) http.Handler {
+	return newTestHandlerTenancy(t, upstream, Tenancy{})
+}
+
+func newTestHandlerTenancy(t *testing.T, upstream http.Handler, tenancy Tenancy) http.Handler {
 	t.Helper()
 	up := httptest.NewServer(upstream)
 	t.Cleanup(up.Close)
@@ -47,7 +52,7 @@ func newTestHandler(t *testing.T, upstream http.Handler) http.Handler {
 	}}
 	eng := engine.New(emb, engine.Config{L1Capacity: 100, Threshold: 0.85},
 		slog.New(slog.NewTextHandler(io.Discard, nil)))
-	return New(prov, eng, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return New(prov, eng, tenancy, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
 func post(t *testing.T, h http.Handler, body string) *httptest.ResponseRecorder {
@@ -113,6 +118,77 @@ func TestStreamingFallsThrough(t *testing.T) {
 	}
 	if upstreamCalls != 1 {
 		t.Fatalf("upstream called %d times; want 1 (passthrough)", upstreamCalls)
+	}
+}
+
+// TestIsolationOptOut: an isolated request neither reads the shared cache nor
+// leaks its own entries into it.
+func TestIsolationOptOut(t *testing.T) {
+	var upstreamCalls int
+	h := newTestHandler(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"Paris"}}]}`)
+	}))
+
+	// Alice seeds the shared cache with the Spanish prompt.
+	r := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(esBody))
+	r.Header.Set("Authorization", "Bearer sk-alice")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Header().Get("X-Polyglot-Cache") != "MISS" {
+		t.Fatalf("seed = %q; want MISS", w.Header().Get("X-Polyglot-Cache"))
+	}
+
+	// Bob asks the equivalent Turkish prompt but opts out of sharing: the
+	// shared entry must be invisible to him.
+	r = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(trBody))
+	r.Header.Set("Authorization", "Bearer sk-bob")
+	r.Header.Set("X-Polyglot-Isolation", "tenant")
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Header().Get("X-Polyglot-Cache") != "MISS" {
+		t.Fatalf("isolated request = %q; must not read the shared cache", w.Header().Get("X-Polyglot-Cache"))
+	}
+	if upstreamCalls != 2 {
+		t.Fatalf("upstream calls = %d; want 2", upstreamCalls)
+	}
+
+	// A shared-scope Turkish request still hits the shared entry.
+	tr := post(t, h, trBody)
+	if tr.Header().Get("X-Polyglot-Cache") != "L2" {
+		t.Fatalf("shared request = %q; want L2", tr.Header().Get("X-Polyglot-Cache"))
+	}
+	if upstreamCalls != 2 {
+		t.Fatalf("upstream calls = %d; want 2 (shared hit served from cache)", upstreamCalls)
+	}
+}
+
+// TestTenantRateLimit: a tenant that exhausts its byte budget gets 429; other
+// tenants are unaffected.
+func TestTenantRateLimit(t *testing.T) {
+	h := newTestHandlerTenancy(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"Paris"}}]}`)
+	}), Tenancy{Quotas: tenant.NewQuotas(tenant.Config{RequestBytesPerSec: 1, RequestBurst: len(esBody)})})
+
+	send := func(key string) int {
+		r := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(esBody))
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("Authorization", "Bearer "+key)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code
+	}
+
+	if code := send("sk-alice"); code != 200 {
+		t.Fatalf("first request = %d; want 200", code)
+	}
+	if code := send("sk-alice"); code != http.StatusTooManyRequests {
+		t.Fatalf("second request = %d; want 429 (burst spent)", code)
+	}
+	if code := send("sk-bob"); code != 200 {
+		t.Fatalf("other tenant = %d; want 200 (independent bucket)", code)
 	}
 }
 

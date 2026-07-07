@@ -32,11 +32,12 @@ type CacheEntry struct {
 
 // StructuralTokens holds the locale-normalized structural elements the guard
 // compares across a cross-lingual match, to reject numeric/ID near-misses that
-// the embedding cannot separate.
+// the embedding cannot separate. The JSON tags fix the shape persisted in the
+// pgvector backend's tokens column.
 type StructuralTokens struct {
-	Numbers    []string
-	IDs        []string
-	Currencies []string
-	Dates      []string
-	CodeIdents []string
+	Numbers    []string `json:"numbers,omitempty"`
+	IDs        []string `json:"ids,omitempty"`
+	Currencies []string `json:"currencies,omitempty"`
+	Dates      []string `json:"dates,omitempty"`
+	CodeIdents []string `json:"code_idents,omitempty"`
 }

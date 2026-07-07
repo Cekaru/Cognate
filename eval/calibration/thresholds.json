@@ -1,0 +1,14 @@
+{
+  "default": 0.8778,
+  "pairs": {
+    "en-es": 0.8778,
+    "en-tr": 0.8665,
+    "en-zh": 0.8638,
+    "es-tr": 0.8727,
+    "es-zh": 0.8586,
+    "tr-zh": 0.8476
+  },
+  "model": "BAAI/bge-m3",
+  "precision_target": 0.99,
+  "generated_at": "2026-07-07T23:50:58Z"
+}

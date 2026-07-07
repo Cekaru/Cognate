@@ -186,6 +186,114 @@ func TestThresholdRejectsLooseMatch(t *testing.T) {
 	}
 }
 
+// TestGuardVetoesNumericNearMiss is the Phase 2 milestone in a unit test: two
+// prompts that differ only in amount ($100 vs $1000) sit at ~0.999 cosine —
+// far above any workable threshold — and the structural guard is the only
+// thing standing between them. The match must be rejected and the request must
+// reach the real LLM.
+func TestGuardVetoesNumericNearMiss(t *testing.T) {
+	const (
+		es100  = "Transfiere $100 a mi cuenta de ahorros"
+		tr1000 = "Tasarruf hesabıma 1000 $ aktar"
+	)
+	emb := &fakeEmbedder{vecs: map[string][]float32{
+		es100:  semVec(0, 0.0),
+		tr1000: semVec(0, 0.05), // ~0.999 cosine: an embedding-level near-miss
+	}}
+	e := newTestEngine(t, emb, 0.85)
+	ctx := context.Background()
+
+	if _, err := e.Serve(ctx, query(es100, "es"), func(context.Context) (*UpstreamResp, error) {
+		return okUpstream("transferred $100")
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	upstreamCalled := false
+	r, err := e.Serve(ctx, query(tr1000, "tr"), func(context.Context) (*UpstreamResp, error) {
+		upstreamCalled = true
+		return okUpstream("transferred $1000")
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Tier != "MISS" || !upstreamCalled {
+		t.Fatalf("tier = %q, upstreamCalled = %v; guard must veto the $100/$1000 near-miss", r.Tier, upstreamCalled)
+	}
+	if string(r.Body) != "transferred $1000" {
+		t.Fatalf("body = %q; want the fresh upstream answer", r.Body)
+	}
+}
+
+// TestGuardAdmitsMatchingTokens: identical structural tokens across languages
+// must NOT fire the guard — the cross-lingual hit still works when the amounts
+// agree.
+func TestGuardAdmitsMatchingTokens(t *testing.T) {
+	const (
+		es100 = "Transfiere $100 a mi cuenta de ahorros"
+		tr100 = "Tasarruf hesabıma 100 $ aktar"
+	)
+	emb := &fakeEmbedder{vecs: map[string][]float32{
+		es100: semVec(0, 0.0),
+		tr100: semVec(0, 0.05),
+	}}
+	e := newTestEngine(t, emb, 0.85)
+	ctx := context.Background()
+
+	if _, err := e.Serve(ctx, query(es100, "es"), func(context.Context) (*UpstreamResp, error) {
+		return okUpstream("transferred $100")
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := e.Serve(ctx, query(tr100, "tr"), func(context.Context) (*UpstreamResp, error) {
+		t.Fatal("upstream must not be called when tokens match")
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Tier != "L2" || string(r.Body) != "transferred $100" {
+		t.Fatalf("tier = %q body = %q; want the ES-seeded L2 hit", r.Tier, r.Body)
+	}
+}
+
+// TestPerPairThreshold: a pair-specific cutoff overrides the default in both
+// directions of the language pair.
+func TestPerPairThreshold(t *testing.T) {
+	emb := &fakeEmbedder{vecs: map[string][]float32{
+		esCapital: semVec(0, 0.0),
+		trCapital: semVec(0, 0.05), // ~0.999 cosine
+	}}
+	e := New(emb, Config{
+		L1Capacity: 100,
+		Threshold:  0.85,
+		Thresholds: &Thresholds{
+			Default: 0.85,
+			Pairs:   map[string]float64{PairKey("tr", "es"): 0.9999}, // stricter than the neighbor
+		},
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	ctx := context.Background()
+
+	if _, err := e.Serve(ctx, query(esCapital, "es"), func(context.Context) (*UpstreamResp, error) {
+		return okUpstream("Paris")
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	upstreamCalled := false
+	r, err := e.Serve(ctx, query(trCapital, "tr"), func(context.Context) (*UpstreamResp, error) {
+		upstreamCalled = true
+		return okUpstream("Paris (TR)")
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Tier != "MISS" || !upstreamCalled {
+		t.Fatalf("tier = %q; the es-tr pair threshold 0.9999 must reject a ~0.999 match", r.Tier)
+	}
+}
+
 // TestNon200NotCached: an upstream error response must not poison the cache.
 func TestNon200NotCached(t *testing.T) {
 	emb := &fakeEmbedder{vecs: map[string][]float32{esCapital: semVec(0, 0)}}

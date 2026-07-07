@@ -20,6 +20,7 @@ import (
 	"github.com/kaanrumin/polyglot-cache/internal/provider"
 	"github.com/kaanrumin/polyglot-cache/internal/proxy"
 	"github.com/kaanrumin/polyglot-cache/internal/telemetry"
+	"github.com/kaanrumin/polyglot-cache/internal/tenant"
 )
 
 func main() {
@@ -31,6 +32,15 @@ func main() {
 		logger.Error("failed to initialize provider", "err", err)
 		os.Exit(1)
 	}
+
+	// Per-tenant limiters: request-byte rate limiting at the front door and
+	// the store quota inside the engine, both keyed by hashed credential.
+	quotas := tenant.NewQuotas(tenant.Config{
+		RequestBytesPerSec: cfg.TenantReqBytesPerSec,
+		RequestBurst:       cfg.TenantReqBurst,
+		StoreBytesPerSec:   cfg.TenantStoreBytesPerSec,
+		StoreBurst:         cfg.TenantStoreBurst,
+	})
 
 	// Cache tiers. When disabled, proxy.New falls back to a pure
 	// passthrough with a nil engine.
@@ -59,17 +69,32 @@ func main() {
 			logger.Warn("DATABASE_URL unset; using in-memory L2 (cache will not persist)")
 		}
 
+		// Calibrated per-language-pair thresholds; a missing or bad file is a
+		// warning, not a startup failure — the global cutoff still applies.
+		var ths *engine.Thresholds
+		if cfg.ThresholdsFile != "" {
+			t, err := engine.LoadThresholds(cfg.ThresholdsFile, cfg.SemanticThreshold)
+			if err != nil {
+				logger.Warn("thresholds file unusable; using global threshold only", "file", cfg.ThresholdsFile, "err", err)
+			} else {
+				ths = t
+				logger.Info("per-language-pair thresholds loaded", "file", cfg.ThresholdsFile, "pairs", len(t.Pairs), "default", t.Default)
+			}
+		}
+
 		eng = engine.New(embedder, engine.Config{
 			L1Capacity: cfg.CacheL1Capacity,
 			Threshold:  cfg.SemanticThreshold,
+			Thresholds: ths,
 			TTL:        cfg.CacheTTL,
 			L2:         l2,
+			Quota:      quotas,
 		}, logger)
 	}
 
 	srv := &http.Server{
 		Addr:         cfg.ProxyAddr,
-		Handler:      proxy.New(prov, eng, logger),
+		Handler:      proxy.New(prov, eng, proxy.Tenancy{Quotas: quotas, IsolatedDefault: cfg.TenantIsolation}, logger),
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 120 * time.Second,
 		IdleTimeout:  90 * time.Second,

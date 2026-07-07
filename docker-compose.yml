@@ -42,6 +42,11 @@ services:
       EMBED_SIDECAR_URL: http://sidecar:8000
       DATABASE_URL: postgres://${POSTGRES_USER:-polyglot}:${POSTGRES_PASSWORD:-polyglot}@postgres:5432/${POSTGRES_DB:-polyglot}?sslmode=disable
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Calibrated per-language-pair cutoffs (eval/calibration); mounted below.
+      THRESHOLDS_FILE: /etc/polyglot/thresholds.json
+      TENANT_ISOLATION: ${TENANT_ISOLATION:-shared}
+    volumes:
+      - ./eval/calibration/thresholds.json:/etc/polyglot/thresholds.json:ro
     ports:
       - "8080:8080"
     depends_on:

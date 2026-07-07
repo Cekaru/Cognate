@@ -22,8 +22,17 @@ type Config struct {
 	// Cache tiers.
 	CacheEnabled      bool          // master switch; false = pure passthrough
 	CacheL1Capacity   int           // max entries in the L1 exact LRU
-	SemanticThreshold float64       // global cross-lingual cutoff (per-language-pair later)
+	SemanticThreshold float64       // global cutoff; fallback when no per-pair table applies
+	ThresholdsFile    string        // calibrated per-language-pair threshold table (JSON); empty = global only
 	CacheTTL          time.Duration // entry lifetime; 0 = no expiry
+
+	// Tenancy. Shared cache is the deliberate default (see THREAT_MODEL.md);
+	// rates are bytes/second with a burst ceiling, 0 disables the limit.
+	TenantIsolation       bool    // true = every tenant gets a private cache namespace
+	TenantReqBytesPerSec  float64 // inbound request-byte rate per tenant
+	TenantReqBurst        int
+	TenantStoreBytesPerSec float64 // cache-write byte rate per tenant (anti-flooding)
+	TenantStoreBurst       int
 }
 
 // Load reads configuration from the environment, applying sane defaults.
@@ -39,7 +48,14 @@ func Load() Config {
 		CacheEnabled:      envBool("CACHE_ENABLED", true),
 		CacheL1Capacity:   envInt("CACHE_L1_CAPACITY", 10000),
 		SemanticThreshold: envFloat("SEMANTIC_THRESHOLD", 0.85),
+		ThresholdsFile:    env("THRESHOLDS_FILE", ""),
 		CacheTTL:          envDuration("CACHE_TTL", 24*time.Hour),
+
+		TenantIsolation:        env("TENANT_ISOLATION", "shared") == "isolated",
+		TenantReqBytesPerSec:   envFloat("TENANT_REQ_BYTES_PER_SEC", 64<<10),  // 64 KiB/s sustained
+		TenantReqBurst:         envInt("TENANT_REQ_BURST", 512<<10),           // 512 KiB burst
+		TenantStoreBytesPerSec: envFloat("TENANT_STORE_BYTES_PER_SEC", 32<<10), // 32 KiB/s sustained
+		TenantStoreBurst:       envInt("TENANT_STORE_BURST", 8<<20),            // 8 MiB burst budget
 	}
 }
 

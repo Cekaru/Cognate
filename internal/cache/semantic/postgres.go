@@ -8,6 +8,7 @@ package semantic
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -38,8 +39,13 @@ var schemaDDL = []string{
 		embedding    vector(%d)  NOT NULL,
 		response     BYTEA       NOT NULL,
 		lang         TEXT        NOT NULL,
+		tokens       JSONB       NOT NULL DEFAULT '{}',
 		created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 	)`, cache.EmbeddingDim),
+	// Databases provisioned before the guard landed lack the tokens column;
+	// entries backfilled with '{}' compare as token-free, which is safe: the
+	// guard rejects them against any prompt that does carry structural tokens.
+	`ALTER TABLE l2_entries ADD COLUMN IF NOT EXISTS tokens JSONB NOT NULL DEFAULT '{}'`,
 	`CREATE INDEX IF NOT EXISTS l2_entries_model_scope_idx ON l2_entries (model, tenant_scope)`,
 	`CREATE INDEX IF NOT EXISTS l2_entries_embedding_idx ON l2_entries USING hnsw (embedding vector_cosine_ops)`,
 }
@@ -84,13 +90,17 @@ func (ix *PostgresIndex) Close() {
 // Add persists an entry. When CreatedAt is zero the database default (now())
 // applies.
 func (ix *PostgresIndex) Add(ctx context.Context, e *Entry) error {
-	const q = `INSERT INTO l2_entries (key, tenant_scope, model, embedding, response, lang, created_at)
-		VALUES ($1, $2, $3, $4::vector, $5, $6, $7)`
+	const q = `INSERT INTO l2_entries (key, tenant_scope, model, embedding, response, lang, tokens, created_at)
+		VALUES ($1, $2, $3, $4::vector, $5, $6, $7, $8)`
 	createdAt := e.CreatedAt
 	if createdAt.IsZero() {
 		createdAt = time.Now()
 	}
-	if _, err := ix.pool.Exec(ctx, q, e.Key, e.TenantScope, e.Model, encodeVector(e.Embedding), e.Response, e.Lang, createdAt); err != nil {
+	tokens, err := json.Marshal(e.Tokens)
+	if err != nil {
+		return fmt.Errorf("l2 add: encode tokens: %w", err)
+	}
+	if _, err := ix.pool.Exec(ctx, q, e.Key, e.TenantScope, e.Model, encodeVector(e.Embedding), e.Response, e.Lang, tokens, createdAt); err != nil {
 		return fmt.Errorf("l2 add: %w", err)
 	}
 	return nil
@@ -112,7 +122,7 @@ func (ix *PostgresIndex) Search(ctx context.Context, vec []float32, model string
 		args []any
 	)
 	args = append(args, encodeVector(vec), model)
-	sb.WriteString(`SELECT key, tenant_scope, model, response, lang, created_at,
+	sb.WriteString(`SELECT key, tenant_scope, model, response, lang, tokens, created_at,
 		1 - (embedding <=> $1::vector) AS similarity
 		FROM l2_entries
 		WHERE model = $2`)
@@ -124,17 +134,21 @@ func (ix *PostgresIndex) Search(ctx context.Context, vec []float32, model string
 	sb.WriteString(` ORDER BY embedding <=> $1::vector LIMIT 1`)
 
 	var (
-		e   Entry
-		sim float64
+		e      Entry
+		tokens []byte
+		sim    float64
 	)
 	err := ix.pool.QueryRow(ctx, sb.String(), args...).Scan(
-		&e.Key, &e.TenantScope, &e.Model, &e.Response, &e.Lang, &e.CreatedAt, &sim,
+		&e.Key, &e.TenantScope, &e.Model, &e.Response, &e.Lang, &tokens, &e.CreatedAt, &sim,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, 0, nil
 	}
 	if err != nil {
 		return nil, 0, fmt.Errorf("l2 search: %w", err)
+	}
+	if err := json.Unmarshal(tokens, &e.Tokens); err != nil {
+		return nil, 0, fmt.Errorf("l2 search: decode tokens: %w", err)
 	}
 	return &e, sim, nil
 }
