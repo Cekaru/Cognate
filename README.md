@@ -9,6 +9,7 @@
   <img alt="Embeddings" src="https://img.shields.io/badge/embeddings-BGE--M3-6E56CF">
   <img alt="Vector store" src="https://img.shields.io/badge/vector%20store-pgvector-4169E1?logo=postgresql&logoColor=white">
   <img alt="Languages" src="https://img.shields.io/badge/languages-TR%20·%20ES%20·%20EN%20·%20ZH-2DA44E">
+  <img alt="License" src="https://img.shields.io/badge/license-MIT-lightgrey">
 </p>
 
 A self-hostable, OpenAI-compatible sidecar in Go. Point an existing gateway
@@ -168,8 +169,6 @@ See [`internal/config/config.go`](internal/config/config.go) for the full list
 | **3** | Multilingual benchmark: cross-lingual hit rate + dollar-savings report | 🚧 In progress |
 | **4** | Threat model, AES-256-GCM at rest, observability, packaging | 🟡 Partial |
 
-Full plan in [`ROADMAP.md`](ROADMAP.md).
-
 ---
 
 ## Security
@@ -181,5 +180,4 @@ drafted in [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md).
 
 ## License
 
-Not yet licensed — a `LICENSE` file has not been added. Until one is, no explicit
-usage rights are granted. (MIT is the intended choice; add a `LICENSE` file to make it real.)
+[MIT](LICENSE).
