@@ -12,9 +12,9 @@
 // verdict, and a ground-truth label:
 //
 //   - positive      the two prompts mean the same thing → serving is correct,
-//                   a real cache hit that avoids an LLM call.
+//     a real cache hit that avoids an LLM call.
 //   - hard-negative same topic, one structural token differs ($100 vs $1000,
-//                   order #A vs #B) → serving is a WRONG answer (a leak).
+//     order #A vs #B) → serving is a WRONG answer (a leak).
 //   - easy-negative unrelated intents → serving is a wrong answer.
 //
 // Three systems are scored over that workload:

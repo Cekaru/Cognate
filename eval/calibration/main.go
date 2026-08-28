@@ -62,12 +62,12 @@ type intent struct {
 
 // sample is one labeled cross-lingual comparison.
 type sample struct {
-	label    string // "positive", "hard-negative", "easy-negative"
-	kind     string // "token", "semantic", or "cross-intent"
-	intentA  string
-	intentB  string
-	score    float64
-	guardOK  bool // structural guard verdict for this pair of texts
+	label   string // "positive", "hard-negative", "easy-negative"
+	kind    string // "token", "semantic", or "cross-intent"
+	intentA string
+	intentB string
+	score   float64
+	guardOK bool // structural guard verdict for this pair of texts
 }
 
 // pairReport is the calibration result for one language pair.

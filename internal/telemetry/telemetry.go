@@ -24,7 +24,7 @@ type AuditEvent struct {
 	Tier       string  // L1 | L2 | MISS
 	Status     int     // HTTP status served
 	Similarity float64 // cosine similarity on an L2 hit; 0 otherwise
-	GuardFired bool     // a structural-token mismatch vetoed a candidate
+	GuardFired bool    // a structural-token mismatch vetoed a candidate
 	PromptLang string  // detected language of the incoming prompt
 	EntryLang  string  // language of the entry that served the answer
 	TokensIn   int     // provider prompt tokens (from the response usage block)

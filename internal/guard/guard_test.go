@@ -57,14 +57,14 @@ func TestNumberNormalization(t *testing.T) {
 		{"send 1,000.50 now", "en", []string{"1000.5"}},
 		{"1.000,50 gönder", "tr", []string{"1000.5"}},
 		{"envía 1.000,50", "es", []string{"1000.5"}},
-		{"1.000 lira", "tr", []string{"1000"}},        // grouped dot = thousands in tr
-		{"1.000 dollars", "en", []string{"1"}},        // decimal dot in en
-		{"1,000 dollars", "en", []string{"1000"}},     // grouped comma = thousands in en
-		{"1,5 litre su", "tr", []string{"1.5"}},       // decimal comma in tr
-		{"3,5 kilómetros", "es", []string{"3.5"}},     // decimal comma in es
+		{"1.000 lira", "tr", []string{"1000"}},    // grouped dot = thousands in tr
+		{"1.000 dollars", "en", []string{"1"}},    // decimal dot in en
+		{"1,000 dollars", "en", []string{"1000"}}, // grouped comma = thousands in en
+		{"1,5 litre su", "tr", []string{"1.5"}},   // decimal comma in tr
+		{"3,5 kilómetros", "es", []string{"3.5"}}, // decimal comma in es
 		{"1,000,000 people", "en", []string{"1000000"}},
 		{"pi is 3.14", "en", []string{"3.14"}},
-		{"the 3rd item", "en", []string{"3"}},   // ordinal is a number, not an ID
+		{"the 3rd item", "en", []string{"3"}},      // ordinal is a number, not an ID
 		{"a 2-year warranty", "en", []string{"2"}}, // digit-word compound is a number, not an ID
 	}
 	for _, c := range cases {
@@ -107,7 +107,7 @@ func TestDates(t *testing.T) {
 		text, lang string
 		want       []string
 	}{
-		{"due 04/15/2024", "en", []string{"2024-04-15"}},   // en month-first
+		{"due 04/15/2024", "en", []string{"2024-04-15"}},       // en month-first
 		{"15/04/2024 tarihinde", "tr", []string{"2024-04-15"}}, // tr day-first
 		{"el 15/04/2024", "es", []string{"2024-04-15"}},
 		{"15.04.2024 tarihli fatura", "tr", []string{"2024-04-15"}}, // tr dotted date

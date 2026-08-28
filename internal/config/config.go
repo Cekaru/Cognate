@@ -28,9 +28,9 @@ type Config struct {
 
 	// Tenancy. Shared cache is the deliberate default (see THREAT_MODEL.md);
 	// rates are bytes/second with a burst ceiling, 0 disables the limit.
-	TenantIsolation       bool    // true = every tenant gets a private cache namespace
-	TenantReqBytesPerSec  float64 // inbound request-byte rate per tenant
-	TenantReqBurst        int
+	TenantIsolation        bool    // true = every tenant gets a private cache namespace
+	TenantReqBytesPerSec   float64 // inbound request-byte rate per tenant
+	TenantReqBurst         int
 	TenantStoreBytesPerSec float64 // cache-write byte rate per tenant (anti-flooding)
 	TenantStoreBurst       int
 }
@@ -52,8 +52,8 @@ func Load() Config {
 		CacheTTL:          envDuration("CACHE_TTL", 24*time.Hour),
 
 		TenantIsolation:        env("TENANT_ISOLATION", "shared") == "isolated",
-		TenantReqBytesPerSec:   envFloat("TENANT_REQ_BYTES_PER_SEC", 64<<10),  // 64 KiB/s sustained
-		TenantReqBurst:         envInt("TENANT_REQ_BURST", 512<<10),           // 512 KiB burst
+		TenantReqBytesPerSec:   envFloat("TENANT_REQ_BYTES_PER_SEC", 64<<10),   // 64 KiB/s sustained
+		TenantReqBurst:         envInt("TENANT_REQ_BURST", 512<<10),            // 512 KiB burst
 		TenantStoreBytesPerSec: envFloat("TENANT_STORE_BYTES_PER_SEC", 32<<10), // 32 KiB/s sustained
 		TenantStoreBurst:       envInt("TENANT_STORE_BURST", 8<<20),            // 8 MiB burst budget
 	}
