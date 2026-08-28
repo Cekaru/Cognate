@@ -166,8 +166,13 @@ See [`internal/config/config.go`](internal/config/config.go) for the full list
 |-------|-------|:-----:|
 | **1** | OpenAI-compatible proxy, L1 exact + L2 semantic cache, BGE-M3 sidecar, pgvector | ✅ Done |
 | **2** | Structural guard, per-pair calibration, tenant isolation & quotas | ✅ Done |
-| **3** | Multilingual benchmark: cross-lingual hit rate + dollar-savings report | 🚧 In progress |
+| **3** | Multilingual benchmark: cross-lingual hit rate + dollar-savings report | ✅ Done |
 | **4** | Threat model, AES-256-GCM at rest, observability, packaging | 🟡 Partial |
+
+**Benchmark headline** ([`eval/benchmark/`](eval/benchmark/)): **70.8%** cross-lingual
+hit rate vs **0%** for an English-only baseline, at a **0%** unsafe-serve rate — the
+structural guard turns 84 near-miss leaks into 0 while keeping every true hit.
+Reproduce offline with `go run ./eval/benchmark`.
 
 ---
 
