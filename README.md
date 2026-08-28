@@ -153,6 +153,7 @@ All config is 12-factor env vars (no config file). Common knobs:
 | `THRESHOLDS_FILE` | — | Calibrated per-pair threshold table (JSON) |
 | `CACHE_TTL` | `24h` | Entry lifetime; `0` = no expiry |
 | `TENANT_ISOLATION` | `shared` | `isolated` = private cache per tenant |
+| `POLYGLOT_ENCRYPTION_KEY` | — | base64 32-byte key; enables AES-256-GCM at rest |
 | `LOG_LEVEL` | `info` | `debug` \| `info` \| `warn` \| `error` |
 
 See [`internal/config/config.go`](internal/config/config.go) for the full list
@@ -167,7 +168,7 @@ See [`internal/config/config.go`](internal/config/config.go) for the full list
 | **1** | OpenAI-compatible proxy, L1 exact + L2 semantic cache, BGE-M3 sidecar, pgvector | ✅ Done |
 | **2** | Structural guard, per-pair calibration, tenant isolation & quotas | ✅ Done |
 | **3** | Multilingual benchmark: cross-lingual hit rate + dollar-savings report | ✅ Done |
-| **4** | Threat model, AES-256-GCM at rest, observability, packaging | 🟡 Partial |
+| **4** | Threat model + AES-256-GCM at rest + audit observability shipped; timing side-channel & KMS provider planned | 🟡 Partial |
 
 **Benchmark headline** ([`eval/benchmark/`](eval/benchmark/)): **70.8%** cross-lingual
 hit rate vs **0%** for an English-only baseline, at a **0%** unsafe-serve rate — the

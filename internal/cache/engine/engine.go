@@ -30,6 +30,15 @@ type StoreQuota interface {
 	AllowStore(tenant string, n int) bool
 }
 
+// Cipher encrypts cache values at rest. It wraps the response body before it is
+// persisted to L2 and unwraps it on a hit; the lookup key stays a plaintext hash
+// so the index is unaffected. *crypto.Encryptor satisfies this. A nil Cipher
+// disables encryption (responses are stored as-is).
+type Cipher interface {
+	Seal(plaintext []byte) ([]byte, error)
+	Open(ciphertext []byte) ([]byte, error)
+}
+
 // Query is a normalized cache lookup request built from an OpenAI chat request.
 type Query struct {
 	// TenantScope is the namespace searched and stored: the shared scope by
@@ -73,6 +82,7 @@ type Result struct {
 	Header     http.Header // upstream headers on a MISS; nil on a hit
 	Tier       string      // "L1", "L2", or "MISS"
 	Similarity float64     // set for L2 hits
+	GuardFired bool        // a structural-token mismatch vetoed a candidate
 	PromptLang string      // language of the incoming prompt
 	EntryLang  string      // language of the entry that served the answer
 }
@@ -92,6 +102,7 @@ type Engine struct {
 	thresholds *Thresholds
 	ttl        time.Duration // 0 = no expiry
 	quota      StoreQuota    // nil = unlimited
+	cipher     Cipher        // nil = responses stored in plaintext
 	logger     *slog.Logger
 	now        func() time.Time
 }
@@ -112,6 +123,11 @@ type Config struct {
 	// Quota, when non-nil, is consulted before every L2 store; a denied write
 	// is skipped (and logged) while the response is still served.
 	Quota StoreQuota
+	// Cipher, when non-nil, encrypts response bodies at rest in L2. On a store
+	// the body is sealed before persistence; on a hit it is opened before use.
+	// A seal or open failure fails closed (the entry is not stored / not served
+	// from cache) rather than exposing plaintext.
+	Cipher Cipher
 }
 
 // New builds an Engine. embedder may be nil, in which case the L2 tier is
@@ -135,6 +151,7 @@ func New(embedder Embedder, cfg Config, logger *slog.Logger) *Engine {
 		thresholds: ths,
 		ttl:        cfg.TTL,
 		quota:      cfg.Quota,
+		cipher:     cfg.Cipher,
 		logger:     logger,
 		now:        time.Now,
 	}
@@ -146,6 +163,10 @@ func New(embedder Embedder, cfg Config, logger *slog.Logger) *Engine {
 // most once per request.
 func (e *Engine) Serve(ctx context.Context, q Query, up UpstreamFunc) (*Result, error) {
 	key := q.key()
+
+	// Tracks whether the structural guard vetoed an over-threshold candidate, so
+	// the fall-through MISS can report it in the audit event.
+	var guardFired bool
 
 	// L1 — exact hash.
 	if rec, ok := e.l1.Get(key); ok && !e.expired(rec.createdAt) {
@@ -194,6 +215,9 @@ func (e *Engine) Serve(ctx context.Context, q Query, up UpstreamFunc) (*Result, 
 			if hit {
 				guardOK, guardCat = guard.Compare(qTokens, ent.Tokens)
 			}
+			if hit && !guardOK {
+				guardFired = true
+			}
 			// Log every semantic lookup's score.
 			e.logger.Info("semantic lookup",
 				"similarity", sim,
@@ -207,16 +231,25 @@ func (e *Engine) Serve(ctx context.Context, q Query, up UpstreamFunc) (*Result, 
 				"tenant", q.Tenant,
 			)
 			if hit && guardOK {
-				// Promote to L1 so an identical repeat skips embedding.
-				e.l1.Put(key, &record{response: ent.Response, lang: ent.Lang, createdAt: e.now()})
-				return &Result{
-					Body:       ent.Response,
-					Status:     http.StatusOK,
-					Tier:       "L2",
-					Similarity: sim,
-					PromptLang: q.Lang,
-					EntryLang:  ent.Lang,
-				}, nil
+				// Decrypt at rest → plaintext for serving. A decrypt failure
+				// (wrong key, tampered row) fails closed: skip the cache and
+				// fall through to the real LLM rather than serve garbage.
+				body, err := e.plaintext(ent.Response)
+				if err != nil {
+					e.logger.Warn("l2 decrypt failed; bypassing entry", "err", err, "model", q.Model)
+				} else {
+					// Promote to L1 (in-memory, plaintext) so an identical repeat
+					// skips embedding.
+					e.l1.Put(key, &record{response: body, lang: ent.Lang, createdAt: e.now()})
+					return &Result{
+						Body:       body,
+						Status:     http.StatusOK,
+						Tier:       "L2",
+						Similarity: sim,
+						PromptLang: q.Lang,
+						EntryLang:  ent.Lang,
+					}, nil
+				}
 			}
 		default:
 			e.logger.Debug("semantic lookup: no candidate", "model", q.Model, "prompt_lang", q.Lang)
@@ -240,12 +273,18 @@ func (e *Engine) Serve(ctx context.Context, q Query, up UpstreamFunc) (*Result, 
 			vec = nil
 		}
 		if vec != nil {
-			if err := e.l2.Add(ctx, &semantic.Entry{
+			// Encrypt the response at rest. A seal failure fails closed: skip the
+			// L2 write (L1 still holds the plaintext for identical repeats) rather
+			// than persist an unencrypted body when encryption was requested.
+			body, err := e.ciphertext(resp.Body)
+			if err != nil {
+				e.logger.Warn("l2 store skipped: encrypt failed", "err", err)
+			} else if err := e.l2.Add(ctx, &semantic.Entry{
 				Key:         key,
 				TenantScope: q.TenantScope,
 				Model:       q.Model,
 				Embedding:   vec,
-				Response:    resp.Body,
+				Response:    body,
 				Lang:        q.Lang,
 				Tokens:      qTokens,
 				CreatedAt:   now,
@@ -262,9 +301,28 @@ func (e *Engine) Serve(ctx context.Context, q Query, up UpstreamFunc) (*Result, 
 		Status:     resp.Status,
 		Header:     resp.Header,
 		Tier:       "MISS",
+		GuardFired: guardFired,
 		PromptLang: q.Lang,
 		EntryLang:  q.Lang,
 	}, nil
+}
+
+// ciphertext seals a response body for storage when a cipher is configured, or
+// returns it unchanged otherwise.
+func (e *Engine) ciphertext(body []byte) ([]byte, error) {
+	if e.cipher == nil {
+		return body, nil
+	}
+	return e.cipher.Seal(body)
+}
+
+// plaintext opens a stored response body when a cipher is configured, or returns
+// it unchanged otherwise.
+func (e *Engine) plaintext(stored []byte) ([]byte, error) {
+	if e.cipher == nil {
+		return stored, nil
+	}
+	return e.cipher.Open(stored)
 }
 
 func (e *Engine) expired(createdAt time.Time) bool {

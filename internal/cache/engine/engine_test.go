@@ -1,7 +1,9 @@
 package engine
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"io"
 	"log/slog"
@@ -9,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/kaanrumin/polyglot-cache/internal/cache"
+	"github.com/kaanrumin/polyglot-cache/internal/cache/semantic"
+	"github.com/kaanrumin/polyglot-cache/internal/crypto"
 )
 
 // fakeEmbedder maps known prompt text to fixed vectors and counts calls, so a
@@ -332,6 +336,61 @@ func TestEmbedFailureDegradesToUpstream(t *testing.T) {
 	}
 	if r.Tier != "MISS" || string(r.Body) != "Paris" {
 		t.Fatalf("got tier %q body %q; want MISS/Paris via upstream", r.Tier, r.Body)
+	}
+}
+
+// TestEncryptionAtRest wires a real AES-256-GCM cipher and proves two things at
+// once: the response persisted to L2 is ciphertext (the plaintext answer never
+// appears in the stored bytes), and a cross-lingual hit still serves the correct
+// decrypted plaintext.
+func TestEncryptionAtRest(t *testing.T) {
+	t.Setenv(crypto.DefaultKeyEnv, base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x07}, 32)))
+	cipher, err := crypto.NewEncryptor(crypto.EnvKeyProvider{})
+	if err != nil {
+		t.Fatalf("NewEncryptor: %v", err)
+	}
+
+	idx := semantic.NewMemoryIndex()
+	emb := &fakeEmbedder{vecs: map[string][]float32{
+		esCapital: semVec(0, 0.0),
+		trCapital: semVec(0, 0.05),
+	}}
+	e := New(emb, Config{L1Capacity: 100, Threshold: 0.85, L2: idx, Cipher: cipher},
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
+	ctx := context.Background()
+
+	const answer = "Paris (from ES)"
+	if _, err := e.Serve(ctx, query(esCapital, "es"), func(context.Context) (*UpstreamResp, error) {
+		return okUpstream(answer)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// The bytes at rest in L2 must be ciphertext, not the plaintext answer.
+	ent, _, err := idx.Search(ctx, semVec(0, 0.0), "gpt-test", cache.TenantScopeShared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ent == nil {
+		t.Fatal("nothing stored in L2")
+	}
+	if bytes.Contains(ent.Response, []byte(answer)) {
+		t.Fatal("stored L2 response contains the plaintext answer; not encrypted at rest")
+	}
+	if pt, err := cipher.Open(ent.Response); err != nil || string(pt) != answer {
+		t.Fatalf("stored blob did not decrypt to the answer: err=%v pt=%q", err, pt)
+	}
+
+	// A cross-lingual hit must still serve the decrypted plaintext.
+	r, err := e.Serve(ctx, query(trCapital, "tr"), func(context.Context) (*UpstreamResp, error) {
+		t.Fatal("upstream must not be called on an encrypted L2 hit")
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Tier != "L2" || string(r.Body) != answer {
+		t.Fatalf("tier = %q body = %q; want an L2 hit serving the decrypted plaintext", r.Tier, r.Body)
 	}
 }
 

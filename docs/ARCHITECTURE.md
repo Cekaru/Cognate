@@ -27,7 +27,11 @@ client / gateway ──► Polyglot Cache (Go proxy)
 - L2 is backed by pgvector when `DATABASE_URL` is set, so the cache survives a
   restart; with no database it falls back to a process-local in-memory index.
 - `docker compose up` brings up **proxy + BGE-M3 sidecar + Postgres/pgvector**.
-- Structured JSON audit logging (`internal/telemetry`); no plaintext payloads.
+- Optional AES-256-GCM encryption at rest for L2 response bodies behind a
+  pluggable `KeyProvider` (`internal/crypto`), enabled by `POLYGLOT_ENCRYPTION_KEY`;
+  the lookup key stays a plaintext hash so the index is unaffected.
+- Per-request structured JSON audit event (`internal/telemetry`): hashed tenant,
+  tier, similarity, guard-fired flag, token counts, latency — no plaintext payloads.
 
 ## Package map
 
@@ -37,7 +41,7 @@ client / gateway ──► Polyglot Cache (Go proxy)
 | `internal/proxy`           | HTTP surface, passthrough reverse proxy          |
 | `internal/provider`        | upstream LLM abstraction (OpenAI-compatible)     |
 | `internal/config`          | 12-factor env config                             |
-| `internal/telemetry`       | structured JSON logging                          |
+| `internal/telemetry`       | structured JSON logging + per-request audit event |
 | `internal/cache` (+ `exact`, `semantic`) | L1/L2 tiers, `CacheEntry`          |
 | `internal/embed`           | Go client to the BGE-M3 sidecar                  |
 | `internal/guard`           | locale-aware structural token guard              |

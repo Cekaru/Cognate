@@ -16,6 +16,7 @@ import (
 	"github.com/kaanrumin/polyglot-cache/internal/cache/engine"
 	"github.com/kaanrumin/polyglot-cache/internal/cache/semantic"
 	"github.com/kaanrumin/polyglot-cache/internal/config"
+	"github.com/kaanrumin/polyglot-cache/internal/crypto"
 	"github.com/kaanrumin/polyglot-cache/internal/embed"
 	"github.com/kaanrumin/polyglot-cache/internal/provider"
 	"github.com/kaanrumin/polyglot-cache/internal/proxy"
@@ -82,6 +83,23 @@ func main() {
 			}
 		}
 
+		// Encryption at rest for L2 response bodies. Enabled when the data-key
+		// env var is present; a configured-but-invalid key fails startup (fail
+		// closed) rather than running without the encryption the operator asked
+		// for. The key is read inside the provider and never stored in config.
+		var cipher engine.Cipher
+		if v, ok := os.LookupEnv(crypto.DefaultKeyEnv); ok && v != "" {
+			enc, err := crypto.NewEncryptor(crypto.EnvKeyProvider{})
+			if err != nil {
+				logger.Error("encryption key present but unusable; refusing to start", "err", err)
+				os.Exit(1)
+			}
+			cipher = enc
+			logger.Info("response encryption at rest enabled", "provider", enc.ProviderName())
+		} else {
+			logger.Warn("encryption at rest disabled; L2 response bodies stored in plaintext", "set", crypto.DefaultKeyEnv)
+		}
+
 		eng = engine.New(embedder, engine.Config{
 			L1Capacity: cfg.CacheL1Capacity,
 			Threshold:  cfg.SemanticThreshold,
@@ -89,6 +107,7 @@ func main() {
 			TTL:        cfg.CacheTTL,
 			L2:         l2,
 			Quota:      quotas,
+			Cipher:     cipher,
 		}, logger)
 	}
 

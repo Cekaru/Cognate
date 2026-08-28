@@ -16,6 +16,7 @@ import (
 	"github.com/kaanrumin/polyglot-cache/internal/cache/engine"
 	"github.com/kaanrumin/polyglot-cache/internal/lang"
 	"github.com/kaanrumin/polyglot-cache/internal/provider"
+	"github.com/kaanrumin/polyglot-cache/internal/telemetry"
 	"github.com/kaanrumin/polyglot-cache/internal/tenant"
 )
 
@@ -104,6 +105,7 @@ func (h *chatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Lang:        lang.Detect(embedText),
 	}
 
+	start := time.Now()
 	result, err := h.eng.Serve(r.Context(), q, func(ctx context.Context) (*engine.UpstreamResp, error) {
 		return h.callUpstream(ctx, body)
 	})
@@ -113,7 +115,45 @@ func (h *chatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Per-request audit event: hashed tenant, counters, and timings only — no
+	// prompt or response text. Token counts are read from the response usage
+	// block, which is present on both hits and misses.
+	in, out := parseUsage(result.Body)
+	status := result.Status
+	if status == 0 {
+		status = http.StatusOK
+	}
+	telemetry.Audit(h.logger, telemetry.AuditEvent{
+		Tenant:     ten,
+		Model:      req.Model,
+		Tier:       result.Tier,
+		Status:     status,
+		Similarity: result.Similarity,
+		GuardFired: result.GuardFired,
+		PromptLang: result.PromptLang,
+		EntryLang:  result.EntryLang,
+		TokensIn:   in,
+		TokensOut:  out,
+		LatencyMS:  time.Since(start).Milliseconds(),
+	})
+
 	writeResult(w, result)
+}
+
+// parseUsage pulls prompt/completion token counts from an OpenAI-style response
+// body's usage block. Missing or unparseable usage yields zeros — the audit
+// event still logs, just without token counts.
+func parseUsage(body []byte) (in, out int) {
+	var parsed struct {
+		Usage struct {
+			PromptTokens     int `json:"prompt_tokens"`
+			CompletionTokens int `json:"completion_tokens"`
+		} `json:"usage"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return 0, 0
+	}
+	return parsed.Usage.PromptTokens, parsed.Usage.CompletionTokens
 }
 
 // fallback restores the buffered body and hands the request to the passthrough
