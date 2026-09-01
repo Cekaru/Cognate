@@ -1,8 +1,12 @@
 # Polyglot Cache — Cross-Lingual Semantic Cache for LLMs
 
-> The first open-source LLM-gateway component where a prompt in **any** language
-> hits a cache entry created by a prompt in **another** language — one cached
-> answer serves your whole multilingual userbase.
+> An open-source LLM-gateway component built specifically for **cross-lingual**
+> semantic caching: a prompt in **any** language hits a cache entry created by a
+> prompt in **another** language — one cached answer serves your whole
+> multilingual userbase. It pairs per-language-pair calibration with a
+> locale-aware structural guard, a combination we haven't found shipped
+> elsewhere — existing gateways cache semantically, but cross-lingual matching is
+> a known-unsolved, unshipped problem ([research](https://arxiv.org/html/2602.18922)).
 
 <p>
   <img alt="Go" src="https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white">
